@@ -1,5 +1,6 @@
 package;
 
+import flixel.graphics.FlxGraphic;
 import flixel.FlxG;
 import flixel.FlxGame;
 import flixel.FlxState;
@@ -8,12 +9,27 @@ import openfl.Lib;
 import openfl.display.FPS;
 import openfl.display.Sprite;
 import openfl.events.Event;
-#if android //only android will use those
-import sys.FileSystem;
+import openfl.display.StageScaleMode;
 import lime.app.Application;
-import lime.system.System;
-import android.*;
+#if mobile
+import mobile.CopyState;
 #end
+
+#if windows
+@:buildXml('
+<target id="haxe">
+	<lib name="wininet.lib" if="windows" />
+	<lib name="dwmapi.lib" if="windows" />
+</target>
+')
+@:cppFileCode('
+#include <windows.h>
+#include <winuser.h>
+#pragma comment(lib, "Shell32.lib")
+extern "C" HRESULT WINAPI SetCurrentProcessExplicitAppUserModelID(PCWSTR AppID);
+')
+#end
+
 class Main extends Sprite
 {
 	var gameWidth:Int = 1280; // Width of the game in pixels (might be less / more in actual pixels depending on your zoom).
@@ -24,18 +40,48 @@ class Main extends Sprite
 	var skipSplash:Bool = true; // Whether to skip the flixel splash screen that appears in release mode.
 	var startFullscreen:Bool = false; // Whether to start the game in fullscreen on desktop targets
 	public static var fpsVar:FPS;
-	public static var path:String = System.applicationStorageDirectory;																
+
+	// You can pretty much ignore everything from here on - your code should go in your states.
 
 	public static function main():Void
 	{
 		Lib.current.addChild(new Main());
+		#if cpp
+		cpp.NativeGc.enable(true);
+		#elseif hl
+		hl.Gc.enable(true);
+		#end
 	}
 
 	public function new()
 	{
+		#if mobile
+		#if android
+		StorageUtil.requestPermissions();
+		#end
+		Sys.setCwd(StorageUtil.getStorageDirectory());
+		#end
+
+		CrashHandler.init();
+
+		#if windows
+		// DPI Scaling fix for windows 
+		// this shouldn't be needed for other systems
+		// Credit to YoshiCrafter29 for finding this function
+		untyped __cpp__("SetProcessDPIAware();");
+
+		var display = lime.system.System.getDisplay(0);
+		if (display != null) {
+			var dpiScale:Float = display.dpi / 96;
+			Application.current.window.width = Std.int(gameWidth * dpiScale);
+			Application.current.window.height = Std.int(gameHeight * dpiScale);
+
+			Application.current.window.x = Std.int((Application.current.window.display.bounds.width - Application.current.window.width) / 2);
+			Application.current.window.y = Std.int((Application.current.window.display.bounds.height - Application.current.window.height) / 2);
+		}
+		#end
 
 		super();
-		SUtil.gameCrashCheck();
 
 		if (stage != null)
 		{
@@ -43,17 +89,15 @@ class Main extends Sprite
 		}
 		else
 		{
-			addEventListener(Event.ADDED_TO_STAGE, init);
+			Lib.current.stage.addEventListener(Event.RESIZE, init);
 		}
 	}
 
-          
-
-	private function init(?E:Event):Void
+	private function init(?E:Event):Void	
 	{
-		if (hasEventListener(Event.ADDED_TO_STAGE))
+		if (Lib.current.stage.hasEventListener(Event.RESIZE))
 		{
-			removeEventListener(Event.ADDED_TO_STAGE, init);
+			Lib.current.stage.removeEventListener(Event.RESIZE, init);
 		}
 
 		setupGame();
@@ -72,17 +116,14 @@ class Main extends Sprite
 			gameWidth = Math.ceil(stageWidth / zoom);
 			gameHeight = Math.ceil(stageHeight / zoom);
 		}
-
-		#if !debug
-		initialState = TitleState;
-		#end     
-
+	
 		ClientPrefs.loadDefaultKeys();
-		SUtil.doTheCheck();
-		addChild(new FlxGame(gameWidth, gameHeight, initialState, zoom, framerate, framerate, skipSplash, startFullscreen));
+		addChild(new FlxGame(gameWidth, gameHeight, #if (mobile && MODS_ALLOWED) !CopyState.checkExistingFiles() ? CopyState : #end initialState, zoom, framerate, framerate, skipSplash, startFullscreen));
 
 		fpsVar = new FPS(10, 3, 0xFFFFFF);
 		addChild(fpsVar);
+		Lib.current.stage.align = "tl";
+		Lib.current.stage.scaleMode = StageScaleMode.NO_SCALE;
 		if(fpsVar != null) {
 			fpsVar.visible = ClientPrefs.showFPS;
 		}
@@ -91,6 +132,12 @@ class Main extends Sprite
 		FlxG.autoPause = false;
 		FlxG.mouse.visible = false;
 		#end
+
+		#if mobile
+		lime.system.System.allowScreenTimeout = ClientPrefs.screensaver;
+		#if android
+		FlxG.android.preventDefaultKeys = [BACK]; 
+		#end
+		#end
 	}
 }
-
