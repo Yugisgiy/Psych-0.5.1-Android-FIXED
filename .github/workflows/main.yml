@@ -43,7 +43,7 @@ jobs:
             buildArgs: "android -ONLY_ARMV7"
             artifactName: androidBuild
             artifactPath: "export/release/android/bin/app/build/outputs/apk/release/*.apk"
-    uses: ./.github/workflows/build.yml
+    uses: ./.github/workflows/Android.yml
     with:
         name: ${{ matrix.name }}
         os: ${{ matrix.os }}
